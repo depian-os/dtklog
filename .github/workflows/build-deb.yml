@@ -19,7 +19,7 @@ jobs:
         update-ca-certificates
         echo "${{ secrets.GPG_PUBLIC_KEY }}" | gpg --dearmor > /tmp/depian-archive-keyring.gpg
         cp /tmp/depian-archive-keyring.gpg /etc/apt/trusted.gpg.d/depian-archive-keyring.gpg
-        echo "deb https://depian-os.github.io/apt-repository depian main" | tee /etc/apt/sources.list.d/depian.list
+        echo "deb https://depian-os.github.io/dev-repository/depian depian main" | tee /etc/apt/sources.list.d/depian.list
         # 临时解决方案：允许不安全的连接用于 GitHub Pages
         apt-get -o Acquire::https::depian-os.github.io::Verify-Peer=false update
         apt install -y build-essential devscripts dh-make apt-utils
@@ -69,12 +69,14 @@ jobs:
         
     - name: Copy deb to apt-repository pool
       run: |
-        # Remove debug symbols packages
-        rm ../*dbgsym*.deb
+        # Remove debug symbols packages if they exist
+        if ls ../*dbgsym*.deb 1> /dev/null 2>&1; then
+          rm ../*dbgsym*.deb
+        fi
         
-        # Clone apt-repository repository
-        git clone https://github.com/${{ github.repository_owner }}/apt-repository.git
-        cd apt-repository
+        # Clone dev-repository repository
+        git clone https://github.com/${{ github.repository_owner }}/dev-repository.git
+        cd dev-repository
         
         # Determine repository name and pool directory structure
         REPO_NAME=$(basename ${{ github.repository }})
@@ -96,7 +98,7 @@ jobs:
         esac
         
         # Create pool directory structure
-        POOL_DIR="pool/main/$POOL_SUBDIR/$REPO_NAME"
+        POOL_DIR="depian/pool/main/$POOL_SUBDIR/$REPO_NAME"
         
         # Clean POOL_DIR if it exists and is not empty
         if [ -d "$POOL_DIR" ] && [ "$(ls -A $POOL_DIR)" ]; then
@@ -108,6 +110,8 @@ jobs:
         
         # Copy deb packages to pool directory
         cp ../../*.deb "$POOL_DIR/"
+
+        cd depian/
 
         apt-ftparchive packages pool/main > dists/depian/main/binary-amd64/Packages
 
@@ -124,7 +128,8 @@ jobs:
 
         # Create InRelease file (signed with inline signature)
         gpg --batch --yes --clearsign --local-user ${{ secrets.GIT_EMAIL }} -o dists/depian/InRelease dists/depian/Release
-                
+
+        cd ../
         # Configure git
         git config --global user.name "${{ secrets.GIT_USER }}"
         git config --global user.email "${{ secrets.GIT_EMAIL }}"
@@ -136,5 +141,5 @@ jobs:
         else
           git commit -m "Add $REPO_NAME packages to pool"
           # 使用Personal Access Token进行push
-          git push https://${{ secrets.PUSH_TOKEN }}@github.com/${{ github.repository_owner }}/apt-repository.git master
+          git push https://${{ secrets.PUSH_TOKEN }}@github.com/${{ github.repository_owner }}/dev-repository.git master
         fi
